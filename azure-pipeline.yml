@@ -94,7 +94,7 @@ steps:
     releaseName: '$(releaseName)'
     namespace: '$(namespace)'
     overrideValues: |
-      image.repository=jrebpracticeacr.azurecr.io/jrebaza01/facturacion-latest
+      image.repository=jrebterraformacr.azurecr.io/lab00
       image.tag=latest
       imagePullSecrets[0].name=acr-secret
     install: true

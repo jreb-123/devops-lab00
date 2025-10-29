@@ -1,0 +1,102 @@
+trigger:
+  branches:
+    include:
+      - main
+      - dev
+
+pool:
+  name: default
+
+variables:
+  imageName: 'jrebterraformacr.azurecr.io/lab00'
+  chartPath: 'charts/app'
+  releaseName: 'lab00'
+  namespace: 'lab00'
+
+steps:
+# 1️⃣ Checkout del código
+- checkout: self
+
+# 2️⃣ Build de la imagen
+- task: Docker@2
+  displayName: 'Build Docker image'
+  inputs:
+    command: build
+    Dockerfile: 'Dockerfile'
+    tags: |
+      $(imageName)
+
+# 3️⃣ Login al ACR
+- task: Docker@2
+  displayName: 'Login to ACR'
+  inputs:
+    command: login
+    containerRegistry: 'jrebterraformacr'   # nombre exacto del servicio ACR en DevOps
+
+# 4️⃣ Push al ACR
+- task: Docker@2
+  displayName: 'Push Docker image to ACR'
+  inputs:
+    command: push
+    tags: |
+      $(imageName)
+
+# 5️⃣ Crear namespace si no existe
+- task: Kubernetes@1
+  displayName: 'Create namespace'
+  inputs:
+    connectionType: 'Kubernetes Service Connection'
+    kubernetesServiceEndpoint: 'aks-kubeconfig-connection'
+    command: 'apply'
+    useConfigurationFile: true
+    inline: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: $(namespace)
+
+# 6️⃣ Crear secreto para ACR en el clúster
+- task: Kubernetes@1
+  displayName: 'Create ACR secret'
+  inputs:
+    connectionType: 'Kubernetes Service Connection'
+    kubernetesServiceEndpoint: 'aks-kubeconfig-connection'
+    command: 'login'
+    useConfigurationFile: false
+
+# 7️⃣ Crear el secret real (aquí usamos Bash, con conexión activa al clúster)
+- task: Bash@3
+  displayName: 'Create ACR secret (kubectl)'
+  env:
+    ACR_USERNAME: $(ACR_USERNAME)
+    ACR_PASSWORD: $(ACR_PASSWORD)
+  inputs:
+    targetType: 'inline'
+    script: |
+      echo "Creando secreto de ACR..."
+      kubectl delete secret acr-secret --namespace $(namespace) --ignore-not-found
+      kubectl create secret docker-registry acr-secret \
+        --docker-server=jrebpracticeacr.azurecr.io \
+        --docker-username=$ACR_USERNAME \
+        --docker-password=$ACR_PASSWORD \
+        --namespace $(namespace)
+
+
+# 8️⃣ Deploy con Helm
+- task: HelmDeploy@0
+  displayName: 'Deploy to AKS with Helm'
+  inputs:
+    connectionType: 'Kubernetes Service Connection'
+    kubernetesServiceConnection: 'aks-kubeconfig-connection'
+    command: 'upgrade'
+    chartType: 'FilePath'
+    chartPath: '$(chartPath)'
+    releaseName: '$(releaseName)'
+    namespace: '$(namespace)'
+    overrideValues: |
+      image.repository=jrebpracticeacr.azurecr.io/jrebaza01/facturacion-latest
+      image.tag=latest
+      imagePullSecrets[0].name=acr-secret
+    install: true
+    waitForExecution: false
+    arguments: '--create-namespace'

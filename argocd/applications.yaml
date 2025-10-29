@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: facturacion
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/jreb-123/devops-facturacion.git'
+    targetRevision: main
+    path: charts/app
+    helm:
+      valueFiles:
+        - values.yaml   # asegúrate que este archivo tenga service.port definido
+      parameters:
+        - name: image.repository
+          value: jrebpracticeacr.azurecr.io/jrebaza01/facturacion-latest
+        - name: image.tag
+          value: latest
+      skipTests: true   # evita que Helm ejecute templates de tests
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
